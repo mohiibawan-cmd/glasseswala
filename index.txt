@@ -1,0 +1,254 @@
+mport React, { useState } from 'react';
+import { base44 } from '@/api/base44Client';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import Footer from '@/components/store/Footer';
+import ProductCard from '@/components/store/ProductCard';
+import { ShoppingBag, Heart, Truck, Shield, RotateCcw, Minus, Plus, Check, Loader2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+import { toast } from "sonner";
+
+export default function ProductDetails() {
+  const queryClient = useQueryClient();
+  const urlParams = new URLSearchParams(window.location.search);
+  const productId = urlParams.get('id');
+  
+  const [quantity, setQuantity] = useState(1);
+  const [selectedImage, setSelectedImage] = useState(0);
+
+  const { data: product, isLoading } = useQuery({
+    queryKey: ['product', productId],
+    queryFn: async () => {
+      const products = await base44.entities.Product.list();
+      return products.find(p => p.id === productId);
+    },
+    enabled: !!productId
+  });
+
+  const { data: allProducts = [] } = useQuery({
+    queryKey: ['products'],
+    queryFn: () => base44.entities.Product.list()
+  });
+
+  const createCartMutation = useMutation({
+    mutationFn: (data) => base44.entities.CartItem.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['cartItems']);
+      toast.success('Added to cart!');
+    }
+  });
+
+  const handleAddToCart = () => {
+    createCartMutation.mutate({
+      product_id: productId,
+      quantity: quantity,
+      session_id: localStorage.getItem('sessionId') || Date.now().toString()
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  if (!product) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <h2 className="text-2xl font-bold mb-4">Product not found</h2>
+        <Link to={createPageUrl("Shop")}>
+          <Button>Back to Shop</Button>
+        </Link>
+      </div>
+    );
+  }
+
+  const images = [product.image_url, ...(product.images || [])].filter(Boolean);
+  if (images.length === 0) {
+    images.push("https://images.unsplash.com/photo-1572635196237-14b3f281503f?w=600");
+  }
+
+  const relatedProducts = allProducts
+    .filter(p => p.category === product.category && p.id !== product.id)
+    .slice(0, 4);
+
+  return (
+    <div className="min-h-screen bg-white">
+      <div className="container mx-auto px-4 py-8">
+        {/* Breadcrumb */}
+        <nav className="text-sm mb-8">
+          <ol className="flex items-center space-x-2">
+            <li><Link to={createPageUrl("Home")} className="text-gray-500 hover:text-gray-900">Home</Link></li>
+            <li className="text-gray-300">/</li>
+            <li><Link to={createPageUrl("Shop")} className="text-gray-500 hover:text-gray-900">Shop</Link></li>
+            <li className="text-gray-300">/</li>
+            <li className="text-gray-900">{product.name}</li>
+          </ol>
+        </nav>
+
+        <div className="grid lg:grid-cols-2 gap-12 mb-16">
+          {/* Images */}
+          <div className="space-y-4">
+            <div className="aspect-square overflow-hidden rounded-2xl bg-gray-100">
+              <img
+                src={images[selectedImage]}
+                alt={product.name}
+                className="w-full h-full object-cover"
+              />
+            </div>
+            {images.length > 1 && (
+              <div className="flex gap-3">
+                {images.map((img, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setSelectedImage(index)}
+                    className={`w-20 h-20 rounded-lg overflow-hidden border-2 transition-all ${
+                      selectedImage === index ? 'border-gray-900' : 'border-transparent'
+                    }`}
+                  >
+                    <img src={img} alt="" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Product Info */}
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              {product.bestseller && (
+                <Badge className="bg-amber-500">Bestseller</Badge>
+              )}
+              {product.featured && (
+                <Badge className="bg-blue-600">Featured</Badge>
+              )}
+              <span className="text-sm text-gray-500 capitalize">{product.category}</span>
+            </div>
+
+            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">{product.name}</h1>
+            
+            <p className="text-3xl font-bold text-gray-900 mb-6">${product.price?.toFixed(2)}</p>
+
+            {product.description && (
+              <p className="text-gray-600 mb-6">{product.description}</p>
+            )}
+
+            {/* Details */}
+            <div className="space-y-3 mb-8">
+              {product.style && (
+                <div className="flex items-center justify-between py-3 border-b">
+                  <span className="text-gray-500">Style</span>
+                  <span className="font-medium capitalize">{product.style}</span>
+                </div>
+              )}
+              {product.material && (
+                <div className="flex items-center justify-between py-3 border-b">
+                  <span className="text-gray-500">Material</span>
+                  <span className="font-medium capitalize">{product.material}</span>
+                </div>
+              )}
+              {product.color && (
+                <div className="flex items-center justify-between py-3 border-b">
+                  <span className="text-gray-500">Color</span>
+                  <span className="font-medium capitalize">{product.color}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between py-3 border-b">
+                <span className="text-gray-500">Availability</span>
+                <span className={`font-medium ${product.in_stock !== false ? 'text-green-600' : 'text-red-600'}`}>
+                  {product.in_stock !== false ? 'In Stock' : 'Out of Stock'}
+                </span>
+              </div>
+            </div>
+
+            {/* Quantity */}
+            <div className="flex items-center gap-4 mb-6">
+              <span className="text-gray-700 font-medium">Quantity</span>
+              <div className="flex items-center border rounded-lg">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                  disabled={quantity <= 1}
+                >
+                  <Minus className="w-4 h-4" />
+                </Button>
+                <span className="w-12 text-center font-medium">{quantity}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setQuantity(quantity + 1)}
+                >
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-4 mb-8">
+              <Button 
+                size="lg" 
+                className="flex-1"
+                onClick={handleAddToCart}
+                disabled={product.in_stock === false || createCartMutation.isPending}
+              >
+                {createCartMutation.isPending ? (
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                ) : (
+                  <ShoppingBag className="w-5 h-5 mr-2" />
+                )}
+                Add to Cart
+              </Button>
+              <Button size="lg" variant="outline" className="px-4">
+                <Heart className="w-5 h-5" />
+              </Button>
+            </div>
+
+            {/* Features */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="text-center p-4 bg-gray-50 rounded-xl">
+                <Truck className="w-6 h-6 mx-auto mb-2 text-gray-600" />
+                <p className="text-xs text-gray-600">Free Shipping</p>
+              </div>
+              <div className="text-center p-4 bg-gray-50 rounded-xl">
+                <Shield className="w-6 h-6 mx-auto mb-2 text-gray-600" />
+                <p className="text-xs text-gray-600">2 Year Warranty</p>
+              </div>
+              <div className="text-center p-4 bg-gray-50 rounded-xl">
+                <RotateCcw className="w-6 h-6 mx-auto mb-2 text-gray-600" />
+                <p className="text-xs text-gray-600">30-Day Returns</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Related Products */}
+        {relatedProducts.length > 0 && (
+          <div className="border-t pt-16">
+            <h2 className="text-2xl font-bold text-gray-900 mb-8">You May Also Like</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              {relatedProducts.map((p) => (
+                <ProductCard 
+                  key={p.id} 
+                  product={p} 
+                  onAddToCart={() => createCartMutation.mutate({
+                    product_id: p.id,
+                    quantity: 1,
+                    session_id: localStorage.getItem('sessionId')
+                  })}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <Footer />
+    </div>
+  );
+}
